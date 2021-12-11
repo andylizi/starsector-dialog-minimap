@@ -1,0 +1,11 @@
+{
+    "id": "mission_minimap",
+    "name": "MissionMinimap",
+    "author": "andylizi",
+    "utility": "true",
+    "version": "${project.version}",
+    "description": "TODO",
+    "gameVersion": "${starsector.version}",
+    "jars": ["jars/${project.build.finalName}.jar"],
+    "modPlugin": "net.andylizi.starsector.missionminimap.PluginMain"
+}

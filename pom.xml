@@ -3,22 +3,34 @@
 
   <groupId>net.andylizi.starsector</groupId>
   <artifactId>mission-minimap</artifactId>
-  <version>1.0</version>
+  <version>1.0.0</version>
   <packaging>jar</packaging>
 
-  <name>mission-minimap</name>
+  <name>MissionMinimap</name>
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.source>1.7</maven.compiler.source>
     <maven.compiler.target>1.7</maven.compiler.target>
+    <starsector.version>0.95a-RC15</starsector.version>
   </properties>
 
   <dependencies>
+    <!--
+      mvn install:install-file \
+        -Dfile=starfarer.api.jar \
+        -Dsources=starfarer.api.zip \
+        -DgroupId=com.fs.starfarer \
+        -DartifactId=starfarer-api \
+        -Dversion=0.95a-RC15 \
+        -Dpackaging=jar \
+        -DgeneratePom=true
+    -->
     <dependency>
-      <groupId>org.ow2.asm</groupId>
-      <artifactId>asm</artifactId>
-      <version>9.2</version>
+      <groupId>com.fs.starfarer</groupId>
+      <artifactId>starfarer-api</artifactId>
+      <version>${starsector.version}</version>
+      <scope>provided</scope>
     </dependency>
     <!-- <dependency>
       <groupId>org.junit.jupiter</groupId>
@@ -29,6 +41,7 @@
   </dependencies>
 
   <build>
+    <finalName>${project.name}-${project.version}</finalName>
     <plugins>
       <plugin>
         <artifactId>maven-compiler-plugin</artifactId>
@@ -51,50 +64,25 @@
       <plugin>
         <artifactId>maven-resources-plugin</artifactId>
         <version>3.2.0</version>
-        <executions>
-          <execution>
-            <id>copy-resources</id>
-            <phase>validate</phase>
-            <goals>
-              <goal>copy-resources</goal>
-            </goals>
-            <configuration>
-              <outputDirectory>${basedir}/target/classes/META-INF/license</outputDirectory>
-              <resources>
-                <resource>
-                  <directory>license</directory>
-                  <filtering>false</filtering>
-                </resource>
-              </resources>
-            </configuration>
-          </execution>
-        </executions>
       </plugin>
       <plugin>
-        <artifactId>maven-shade-plugin</artifactId>
-        <version>3.2.4</version>
+        <artifactId>maven-assembly-plugin</artifactId>
+        <version>3.3.0</version>
+        <configuration>
+          <descriptors>
+            <descriptor>src/assembly/mod.xml</descriptor>
+          </descriptors>
+          <appendAssemblyId>false</appendAssemblyId>
+        </configuration>
         <executions>
           <execution>
+            <id>make-assembly</id>
             <phase>package</phase>
             <goals>
-              <goal>shade</goal>
+              <goal>single</goal>
             </goals>
           </execution>
         </executions>
-        <configuration>
-          <createDependencyReducedPom>false</createDependencyReducedPom>
-          <minimizeJar>true</minimizeJar>
-          <filters>
-            <filter>
-              <artifact>*:*</artifact>
-              <excludes>
-                <!-- We add licenses manually -->
-                <exclude>META-INF/LICENSE*</exclude>
-                <exclude>META-INF/NOTICE*</exclude>
-              </excludes>
-            </filter>
-          </filters>
-        </configuration>
       </plugin>
       <plugin>
         <artifactId>maven-surefire-plugin</artifactId>
