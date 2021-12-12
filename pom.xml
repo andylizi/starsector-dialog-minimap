@@ -32,6 +32,33 @@
       <version>${starsector.version}</version>
       <scope>provided</scope>
     </dependency>
+    <!--
+      mvn install:install-file \
+        -Dfile=fs.common_obf.jar \
+        -DgroupId=com.fs.starfarer \
+        -DartifactId=common \
+        -Dversion=0.95a-RC15 \
+        -Dpackaging=jar \
+        -DgeneratePom=true
+    -->
+    <dependency>
+      <groupId>com.fs.starfarer</groupId>
+      <artifactId>common</artifactId>
+      <version>${starsector.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>log4j</groupId>
+      <artifactId>log4j</artifactId>
+      <version>1.2.9</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.lwjgl</groupId>
+      <artifactId>lwjgl-util</artifactId>
+      <version>2.7.1</version>
+      <scope>provided</scope>
+    </dependency>
     <!-- <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter-engine</artifactId>

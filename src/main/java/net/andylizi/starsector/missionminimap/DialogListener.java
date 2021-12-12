@@ -24,7 +24,7 @@ public class DialogListener extends BaseCampaignEventListener implements Seriali
 
             @SuppressWarnings("resource")
             Class<?> cls = new URLClassLoader(urls, ClassLoader.getSystemClassLoader())
-                .loadClass(PluginMain.class.getPackage().getName() + ".Injector");
+                .loadClass(PluginMain.class.getPackage().getName() + ".MapInjector");
 
             tmp = MethodHandles.lookup().findStatic(cls, "injectDialog",
                     MethodType.methodType(void.class, InteractionDialogAPI.class));

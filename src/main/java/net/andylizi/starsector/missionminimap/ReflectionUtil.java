@@ -4,22 +4,55 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
 
 public final class ReflectionUtil {
-    public static Method getDelcaringMethodByName(Class<?> owner, String name) throws NoSuchMethodException {
+    public static Method getFirstMethodByName(Class<?> owner, String name) throws NoSuchMethodException {
         for (Method m : owner.getDeclaredMethods()) {
-            if (name.equals(m.getName()))
+            if (name.equals(m.getName())) {
+                m.setAccessible(true);
                 return m;
+            }
         }
         throw new NoSuchMethodException(name + "() in " + owner);
     }
 
-    public static Field getDeclaringFieldByType(Class<?> owner, Class<?> type) throws NoSuchFieldException {
+    public static Field getFirstFieldByType(Class<?> owner, Class<?> type) throws NoSuchFieldException {
         for (Field f : owner.getDeclaredFields()) {
-            if (type == f.getType())
+            if (type == f.getType()) {
+                f.setAccessible(true);
                 return f;
+            }
         }
         throw new NoSuchFieldException("field with type " + type.getName() + " in " + owner);
+    }
+
+    public static Field getFirstFieldBySupertype(Class<?> owner, Class<?> supertype) throws NoSuchFieldException {
+        for (Field f : owner.getDeclaredFields()) {
+            if (supertype.isAssignableFrom(f.getType())) {
+                f.setAccessible(true);
+                return f;
+            }
+        }
+        throw new NoSuchFieldException("field with super" + supertype + " in " + owner);
+    }
+    
+    public static List<Field> getFieldsByType(Class<?> owner, Class<?> type) {
+        List<Field> fields = new ArrayList<>();
+        for (Field f : owner.getDeclaredFields()) {
+            if (type == f.getType()) fields.add(f);
+        }
+        return fields;
+    }
+    
+    @SuppressWarnings("unchecked")
+    public static <T> Constructor<T> getFirstConstructorByParameterCount(Class<T> type, int count) throws NoSuchMethodException {
+        for (Constructor<?> ctor : type.getDeclaredConstructors()) {
+            if (ctor.getParameterTypes().length == count)
+                return (Constructor<T>) ctor;
+        }
+        throw new NoSuchMethodException("constructor with " + count + " parameters in " + type);
     }
 
     @SuppressWarnings({ "unchecked", "deprecation" })
