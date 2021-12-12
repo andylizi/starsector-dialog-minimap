@@ -1,11 +1,13 @@
 package net.andylizi.starsector.missionminimap;
 
+import java.awt.*;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodHandles.Lookup;
 import java.lang.invoke.MethodType;
 import java.lang.reflect.*;
 import java.util.*;
+import java.util.List;
 
 import com.fs.graphics.util.Fader;
 import com.fs.starfarer.api.Global;
@@ -17,6 +19,7 @@ import com.fs.starfarer.api.combat.EngagementResultAPI;
 import com.fs.starfarer.api.ui.LabelAPI;
 import com.fs.starfarer.api.ui.UIComponentAPI;
 import com.fs.starfarer.api.ui.UIPanelAPI;
+import com.fs.starfarer.api.util.Misc;
 import org.apache.log4j.Logger;
 import org.lwjgl.util.vector.Vector2f;
 
@@ -119,7 +122,7 @@ public final class MapInjector {
 
                 OptionDelegateProbe probe = new OptionDelegateProbe();
                 Field dialogPluginField = ReflectionUtil.getFirstFieldByType(dialogType,
-                                                                             InteractionDialogPlugin.class);
+                    InteractionDialogPlugin.class);
                 dialogPluginField.setAccessible(true);
                 Object originalPlugin = dialogPluginField.get(dialog);
                 try {
@@ -182,7 +185,7 @@ public final class MapInjector {
             final Method optionSelectedMethod = OPTION_SELECTED_METHOD;
             final MethodHandle optionTextGetter = OPTION_TEXT_GETTER;
             Object newDelegate = Proxy.newProxyInstance(originalDelegateImplType.getClassLoader(),
-                                                        new Class<?>[] { delegateInterface }, new InvocationHandler() {
+                new Class<?>[] { delegateInterface }, new InvocationHandler() {
                     @Override
                     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
                         Object result = method.invoke(originalDelegate, args);
@@ -297,14 +300,15 @@ public final class MapInjector {
     private static MethodHandle EVENTS_MAP_PANEL_GETTER;
     private static Class<?> MAP_PANEL_TYPE;
     private static MethodHandle MAP_PANEL_CTOR;
-    private static MethodHandle MAP_PANEL_CENTER_ON_ENTITY;
+    private static MethodHandle MAP_PANEL_GET_MAP;
+    private static MethodHandle MAP_PANEL_CENTER_ON;
+    private static MethodHandle MAP_ADD_PING;
 
     private static Class<?> MAP_FILTER_TYPE;
     private static Class<?> MAP_FILTER_DATA_TYPE;
     private static MethodHandle MAP_FILTER_DATA_CTOR;
 
     private static Class<?> MAP_DATA_TYPE;
-    private static MethodHandle MAP_DATA_GETTER;
     private static MethodHandle MAP_DATA_CTOR;
 
     private static Field MAP_DATA_ENTITY;
@@ -319,6 +323,7 @@ public final class MapInjector {
         }
 
         if (MAP_PANEL_TYPE == null) {
+            Lookup lookup = MethodHandles.publicLookup();
             for (Field f : EVENTS_PANEL_TYPE.getDeclaredFields()) {
                 Class<?> type = f.getType();
                 if (!type.getName().startsWith("com.fs.starfarer.coreui.map")) continue;
@@ -338,7 +343,7 @@ public final class MapInjector {
                 if (hasGetMap && hasGetFilter) {
                     MAP_PANEL_TYPE = type;
                     f.setAccessible(true);
-                    EVENTS_MAP_PANEL_GETTER = MethodHandles.publicLookup().unreflectGetter(f);
+                    EVENTS_MAP_PANEL_GETTER = lookup.unreflectGetter(f);
                     break;
                 }
             }
@@ -346,8 +351,11 @@ public final class MapInjector {
             if (MAP_PANEL_TYPE == null)
                 throw new ClassNotFoundException("Failed to find MapPanel from " + EVENTS_PANEL_TYPE);
 
-            MAP_PANEL_CENTER_ON_ENTITY = MethodHandles.publicLookup()
-                .unreflect(MAP_PANEL_TYPE.getMethod("centerOnEntity", SectorEntityToken.class));
+            MAP_PANEL_GET_MAP = lookup.unreflect(MAP_PANEL_TYPE.getMethod("getMap"));
+            MAP_PANEL_CENTER_ON = lookup
+                .unreflect(MAP_PANEL_TYPE.getMethod("centerOn", Vector2f.class));
+            MAP_ADD_PING = lookup.unreflect(MAP_PANEL_GET_MAP.type().returnType().getMethod("addPing",
+                SectorEntityToken.class, Color.class, float.class, int.class));
         }
 
         if (MAP_FILTER_DATA_TYPE == null) {
@@ -370,7 +378,7 @@ public final class MapInjector {
             if (MAP_DATA_TYPE == null)
                 throw new ClassNotFoundException("Failed to find MapPanel.Data in " + MAP_PANEL_TYPE);
 
-            MAP_DATA_GETTER = MethodHandles.publicLookup()
+            MethodHandle MAP_DATA_GETTER = MethodHandles.publicLookup()
                 .unreflectGetter(ReflectionUtil.getFirstFieldByType(MAP_PANEL_TYPE, MAP_DATA_TYPE));
             MAP_DATA_CTOR = MethodHandles.publicLookup()
                 .findConstructor(MAP_DATA_TYPE, MethodType.methodType(void.class));
@@ -394,11 +402,10 @@ public final class MapInjector {
 
         Object filterData = MAP_FILTER_DATA_CTOR.invoke(false);
         Object mapData = MAP_DATA_CTOR.invoke();
-        LocationAPI hyperspace = Global.getSector().getHyperspace();
 
         MAP_DATA_ENTITY.set(mapData, target);
         MAP_DATA_FILTER_DATA.set(mapData, filterData);
-        MAP_DATA_TARGET_LOC.set(mapData, hyperspace);
+        MAP_DATA_TARGET_LOC.set(mapData, Global.getSector().getHyperspace());
         if (MAP_DATA_ZOOM != null) MAP_DATA_ZOOM.setFloat(mapData, 2.4f);
         for (Map.Entry<Field, Boolean> entry : MAP_DATA_FLAGS.entrySet()) {
             entry.getKey().set(mapData, entry.getValue());
@@ -407,7 +414,19 @@ public final class MapInjector {
         float width = ((UIComponentAPI) dialog.getTextPanel()).getPosition().getWidth();
         UIComponentAPI mapPanel = (UIComponentAPI) MAP_PANEL_CTOR.invoke(mapData, width, 300f);
         addMapPanelToDialog(dialog, mapPanel);
-        MAP_PANEL_CENTER_ON_ENTITY.invoke(mapPanel, hyperspace.createToken(target.getContainingLocation().getLocation()));
+        MAP_PANEL_CENTER_ON.invoke(mapPanel, target.getLocationInHyperspace());
+
+        try {
+            StarSystemAPI system = ((StarSystemAPI) target.getContainingLocation());
+            PlanetAPI star = system.getStar();
+            Color color = star == null ? Misc.getDarkPlayerColor() : star.getSpec().getIconColor();
+            color = new Color(color.getRed(), color.getGreen(), color.getBlue(), 110);
+
+            Object map = MAP_PANEL_GET_MAP.invoke(mapPanel);
+            MAP_ADD_PING.invoke(map, system.getHyperspaceAnchor(), color, /*size*/ 360f, /*count*/ 1);
+        } catch (Throwable t) {
+            logger.warn("Failed to ping the target on the map", t);
+        }
     }
 
     private static MethodHandle GET_FADER;
@@ -423,7 +442,7 @@ public final class MapInjector {
 
     private static void addMapPanelToDialog(InteractionDialogAPI dialog, UIComponentAPI mapPanel) {
         ((UIPanelAPI) dialog).addComponent(mapPanel)
-            .rightOfBottom((UIComponentAPI) dialog.getTextPanel(), 28.0f) // trying to align with the visual XD
+            .rightOfBottom((UIComponentAPI) dialog.getTextPanel(), 27.0f) // trying to align with the visual XD
             .setYAlignOffset(-150f);
 
         try {
