@@ -143,7 +143,7 @@ public final class MapInjector {
                     for (Object option : panel.getSavedOptionList()) {
                         String text = access_Option.getText(option);
                         // One of the options start with "Accept" — it's probably asking for a mission.
-                        if ("Accept".startsWith(text)) {
+                        if (text.startsWith("Accept")) {
                             searchMissionSystem(dialog);
                             break;
                         }
