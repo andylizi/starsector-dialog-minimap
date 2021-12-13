@@ -1,4 +1,4 @@
-package net.andylizi.starsector.missionminimap;
+package net.andylizi.starsector.dialogminimap;
 
 import java.awt.*;
 import java.lang.invoke.MethodHandle;
@@ -23,7 +23,7 @@ import com.fs.starfarer.api.ui.SectorMapAPI;
 import com.fs.starfarer.api.ui.UIComponentAPI;
 import com.fs.starfarer.api.ui.UIPanelAPI;
 import com.fs.starfarer.api.util.Misc;
-import net.andylizi.starsector.missionminimap.access.*;
+import net.andylizi.starsector.dialogminimap.access.*;
 import org.apache.log4j.Logger;
 
 public final class MapInjector {

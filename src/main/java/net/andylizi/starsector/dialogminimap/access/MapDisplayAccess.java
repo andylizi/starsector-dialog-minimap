@@ -1,9 +1,9 @@
-package net.andylizi.starsector.missionminimap.access;
+package net.andylizi.starsector.dialogminimap.access;
 
 import com.fs.starfarer.api.campaign.CustomCampaignEntityAPI;
 import com.fs.starfarer.api.campaign.SectorEntityToken;
 import com.fs.starfarer.api.ui.UIPanelAPI;
-import net.andylizi.starsector.missionminimap.ReflectionUtil;
+import net.andylizi.starsector.dialogminimap.ReflectionUtil;
 
 import java.awt.Color;
 import java.lang.reflect.Method;

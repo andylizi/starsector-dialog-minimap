@@ -1,9 +1,9 @@
-package net.andylizi.starsector.missionminimap.access;
+package net.andylizi.starsector.dialogminimap.access;
 
 import com.fs.starfarer.api.campaign.SectorEntityToken;
 import com.fs.starfarer.api.campaign.comm.CommMessageAPI;
 import com.fs.starfarer.api.campaign.comm.IntelInfoPlugin;
-import net.andylizi.starsector.missionminimap.ReflectionUtil;
+import net.andylizi.starsector.dialogminimap.ReflectionUtil;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;

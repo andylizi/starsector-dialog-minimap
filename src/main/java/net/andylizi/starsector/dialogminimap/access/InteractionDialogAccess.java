@@ -1,4 +1,4 @@
-package net.andylizi.starsector.missionminimap.access;
+package net.andylizi.starsector.dialogminimap.access;
 
 import com.fs.starfarer.api.campaign.InteractionDialogAPI;
 

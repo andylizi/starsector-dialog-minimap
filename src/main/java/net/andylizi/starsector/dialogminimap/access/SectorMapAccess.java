@@ -1,7 +1,7 @@
-package net.andylizi.starsector.missionminimap.access;
+package net.andylizi.starsector.dialogminimap.access;
 
 import com.fs.starfarer.api.ui.SectorMapAPI;
-import net.andylizi.starsector.missionminimap.ReflectionUtil;
+import net.andylizi.starsector.dialogminimap.ReflectionUtil;
 import org.lwjgl.util.vector.Vector2f;
 
 import java.lang.invoke.MethodHandle;

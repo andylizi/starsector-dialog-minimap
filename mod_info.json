@@ -1,11 +1,11 @@
 {
-    "id": "mission_minimap",
-    "name": "MissionMinimap",
+    "id": "dialog_minimap",
+    "name": "DialogMinimap",
     "author": "andylizi",
     "utility": "true",
     "version": "${project.version}",
-    "description": "TODO",
+    "description": "Shows a minimap on the dialog when accepting missions.",
     "gameVersion": "${starsector.version}",
     "jars": ["jars/${project.build.finalName}.jar"],
-    "modPlugin": "net.andylizi.starsector.missionminimap.PluginMain"
+    "modPlugin": "net.andylizi.starsector.dialogminimap.PluginMain"
 }

@@ -1,4 +1,4 @@
-package net.andylizi.starsector.missionminimap;
+package net.andylizi.starsector.dialogminimap;
 
 import com.fs.starfarer.api.BaseModPlugin;
 import com.fs.starfarer.api.Global;

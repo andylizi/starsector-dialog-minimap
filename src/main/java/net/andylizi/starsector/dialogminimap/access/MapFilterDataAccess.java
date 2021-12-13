@@ -1,4 +1,4 @@
-package net.andylizi.starsector.missionminimap.access;
+package net.andylizi.starsector.dialogminimap.access;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;

@@ -1,4 +1,4 @@
-package net.andylizi.starsector.missionminimap;
+package net.andylizi.starsector.dialogminimap;
 
 import java.io.Serializable;
 import java.lang.invoke.MethodHandle;

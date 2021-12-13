@@ -1,10 +1,10 @@
-package net.andylizi.starsector.missionminimap.access;
+package net.andylizi.starsector.dialogminimap.access;
 
 import com.fs.starfarer.api.campaign.LocationAPI;
 import com.fs.starfarer.api.campaign.SectorEntityToken;
 import com.fs.starfarer.api.campaign.StarSystemAPI;
 import com.fs.starfarer.api.impl.campaign.procgen.Constellation;
-import net.andylizi.starsector.missionminimap.ReflectionUtil;
+import net.andylizi.starsector.dialogminimap.ReflectionUtil;
 import org.jetbrains.annotations.Nullable;
 
 import java.awt.Color;
@@ -12,7 +12,6 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.reflect.Field;
-import java.util.List;
 import java.util.Set;
 
 public class MapParamsAccess {
