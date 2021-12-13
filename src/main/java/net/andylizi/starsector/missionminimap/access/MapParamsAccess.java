@@ -5,6 +5,7 @@ import com.fs.starfarer.api.campaign.SectorEntityToken;
 import net.andylizi.starsector.missionminimap.ReflectionUtil;
 import org.jetbrains.annotations.Nullable;
 
+import java.awt.Color;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
@@ -15,6 +16,7 @@ public class MapParamsAccess {
     private final MethodHandle ctor;
     private final MethodHandle f_entity_set;
     private final MethodHandle f_filterData_set;
+    private final MethodHandle f_borderColor_set;
     private final MethodHandle f_location_set;
 
     @Nullable
@@ -33,6 +35,10 @@ public class MapParamsAccess {
         field = ReflectionUtil.getFirstFieldByType(mapParamsType, mapFilterDataType);
         ReflectionUtil.trySetAccessible(field);
         this.f_filterData_set = lookup.unreflectSetter(field);
+
+        field = ReflectionUtil.getFirstFieldByType(mapParamsType, Color.class);
+        ReflectionUtil.trySetAccessible(field);
+        this.f_borderColor_set = lookup.unreflectSetter(field);
 
         field = ReflectionUtil.getFirstFieldBySupertype(mapParamsType, LocationAPI.class);
         ReflectionUtil.trySetAccessible(field);
@@ -78,6 +84,16 @@ public class MapParamsAccess {
     public void setFilterData(Object mapParams, Object filterData) {
         try {
             this.f_filterData_set.invoke(mapParams, filterData);
+        } catch (RuntimeException | Error ex) {
+            throw ex;
+        } catch (Throwable t) {
+            throw new AssertionError("unreachable", t);
+        }
+    }
+
+    public void setBorderColor(Object mapParams, Color color) {
+        try {
+            this.f_borderColor_set.invoke(mapParams, color);
         } catch (RuntimeException | Error ex) {
             throw ex;
         } catch (Throwable t) {

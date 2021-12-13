@@ -12,7 +12,6 @@ import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.campaign.*;
 import com.fs.starfarer.api.campaign.comm.CommMessageAPI;
 import com.fs.starfarer.api.campaign.comm.IntelInfoPlugin;
-import com.fs.starfarer.api.campaign.comm.IntelManagerAPI;
 import com.fs.starfarer.api.campaign.rules.MemKeys;
 import com.fs.starfarer.api.campaign.rules.MemoryAPI;
 import com.fs.starfarer.api.combat.EngagementResultAPI;
@@ -273,6 +272,7 @@ public final class MapInjector {
         Object mapParams = acc_MapParams.newInstance();
         acc_MapParams.setEntity(mapParams, target);
         acc_MapParams.setFilterData(mapParams, filterData);
+        acc_MapParams.setBorderColor(mapParams, Misc.getDarkPlayerColor());
         acc_MapParams.setLocation(mapParams, Global.getSector().getHyperspace());
         acc_MapParams.trySetZoom(mapParams, 2.4f);
 
@@ -300,11 +300,11 @@ public final class MapInjector {
             StarSystemAPI system = target.getStarSystem();
             if (system == null) return;
             PlanetAPI star = system.getStar();
-            Color color = star == null ? Misc.getDarkPlayerColor() : star.getSpec().getIconColor();
-            color = new Color(color.getRed(), color.getGreen(), color.getBlue(), 110);
+            Color pingColor = star == null ? Misc.getDarkPlayerColor() : star.getSpec().getIconColor();
+            pingColor = new Color(pingColor.getRed(), pingColor.getGreen(), pingColor.getBlue(), 110);
 
             if (acc_mapDisplay == null) acc_mapDisplay = new MapDisplayAccess(((UIPanelAPI) mapDisplay).getClass());
-            acc_mapDisplay.addPing(mapDisplay, system.getHyperspaceAnchor(), color, 360f, 1);
+            acc_mapDisplay.addPing(mapDisplay, system.getHyperspaceAnchor(), pingColor, 360f, 1);
         } catch (Throwable t) {
             logger.warn("Failed to ping the target on the map", t);
         }
