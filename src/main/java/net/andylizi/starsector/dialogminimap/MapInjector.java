@@ -12,11 +12,15 @@ import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.campaign.*;
 import com.fs.starfarer.api.campaign.comm.CommMessageAPI;
 import com.fs.starfarer.api.campaign.comm.IntelInfoPlugin;
+import com.fs.starfarer.api.campaign.econ.MarketAPI;
 import com.fs.starfarer.api.campaign.rules.MemKeys;
 import com.fs.starfarer.api.campaign.rules.MemoryAPI;
 import com.fs.starfarer.api.combat.EngagementResultAPI;
 
 import com.fs.starfarer.api.impl.campaign.ids.Tags;
+import com.fs.starfarer.api.impl.campaign.intel.bar.BarEventDialogPlugin;
+import com.fs.starfarer.api.impl.campaign.intel.bar.PortsideBarEvent;
+import com.fs.starfarer.api.impl.campaign.intel.bar.events.DeliveryBarEvent;
 import com.fs.starfarer.api.impl.campaign.procgen.Constellation;
 import com.fs.starfarer.api.ui.LabelAPI;
 import com.fs.starfarer.api.ui.SectorMapAPI;
@@ -159,6 +163,7 @@ public final class MapInjector {
     }
 
     private static TextPanelAccess acc_TextPanel;
+    private static BarEventDialogPluginAccess acc_BarEventDialogPlugin;
 
     public static void searchMissionSystem(InteractionDialogAPI dialog) throws ReflectiveOperationException {
         // From BaseHubMission.updateInteractionData()
@@ -173,12 +178,34 @@ public final class MapInjector {
         }
 
         // Find all keys that look like $XX_systemName.
-        // The naming is just a convention, but I don't know of any exceptions.
         List<String> systemNames = new ArrayList<>(1);
         for (String key : interactionMemory.getKeys())
             if (key.endsWith("_systemName"))
                 systemNames.add(interactionMemory.getString(key));
         if (systemNames.isEmpty()) {
+            /* Special handling for DeliveryBarEvent — it doesn't follow the systemName convention. */
+            InteractionDialogPlugin plugin = dialog.getPlugin();
+            boolean isBarEvent = false;
+            Class<?> type = plugin.getClass();
+            while (type != null) {
+                // Avoid instanceof, in case the class doesn't exist
+                if ("com.fs.starfarer.api.impl.campaign.intel.bar.BarEventDialogPlugin".equals(type.getName())) {
+                    isBarEvent = true;
+                    break;
+                }
+                type = type.getSuperclass();
+            }
+            if (isBarEvent) {
+                if (acc_BarEventDialogPlugin == null) acc_BarEventDialogPlugin = new BarEventDialogPluginAccess();
+                PortsideBarEvent event = acc_BarEventDialogPlugin.getEvent((BarEventDialogPlugin) plugin);
+                if (event instanceof DeliveryBarEvent) {
+                    MarketAPI market = ((DeliveryBarEvent) event).getDestination();
+                    logger.info("Mission target found (DeliverBarEvent): " + market.getName());
+                    showMinimap(dialog, market.getPrimaryEntity());
+                    return;
+                }
+            }
+
             logger.info("No systemName for the mission is detected");
             return;
         }
