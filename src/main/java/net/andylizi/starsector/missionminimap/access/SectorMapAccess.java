@@ -1,5 +1,6 @@
 package net.andylizi.starsector.missionminimap.access;
 
+import com.fs.starfarer.api.ui.SectorMapAPI;
 import net.andylizi.starsector.missionminimap.ReflectionUtil;
 import org.lwjgl.util.vector.Vector2f;
 
@@ -9,7 +10,7 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 
 public class SectorMapAccess {
-    private final Class<?> sectorMapType;
+    private final Class<? extends SectorMapAPI> sectorMapType;
     private final Class<?> mapParamsType;
     private final Class<?> mapFilterType;
     private final Class<?> mapFilterDataType;
@@ -18,7 +19,7 @@ public class SectorMapAccess {
     private final MethodHandle m_getMap;
     private final MethodHandle m_centerOn;
 
-    public SectorMapAccess(Class<?> sectorMapType) throws ReflectiveOperationException {
+    public SectorMapAccess(Class<? extends SectorMapAPI> sectorMapType) throws ReflectiveOperationException {
         this.sectorMapType = sectorMapType;
         this.mapFilterType = sectorMapType.getDeclaredMethod("getFilter").getReturnType();
         this.mapFilterDataType = this.mapFilterType.getDeclaredMethod("getData").getReturnType();
@@ -50,7 +51,7 @@ public class SectorMapAccess {
         this.m_centerOn = lookup.unreflect(method);
     }
 
-    public Class<?> sectorMapType() {
+    public Class<? extends SectorMapAPI> sectorMapType() {
         return this.sectorMapType;
     }
 
@@ -66,9 +67,9 @@ public class SectorMapAccess {
         return this.mapFilterDataType;
     }
 
-    public Object newInstance(Object mapParams, float width, float height) {
+    public SectorMapAPI newInstance(Object mapParams, float width, float height) {
         try {
-            return this.ctor.invoke(mapParams, width, height);
+            return (SectorMapAPI) this.ctor.invoke(mapParams, width, height);
         } catch (RuntimeException | Error ex) {
             throw ex;
         } catch (Throwable t) {
@@ -76,7 +77,7 @@ public class SectorMapAccess {
         }
     }
 
-    public Object getParams(Object sectorMap) {
+    public Object getParams(SectorMapAPI sectorMap) {
         try {
             return this.m_getParams.invoke(sectorMap);
         } catch (RuntimeException | Error ex) {
@@ -86,7 +87,7 @@ public class SectorMapAccess {
         }
     }
 
-    public Object getMap(Object sectorMap) {
+    public Object getMap(SectorMapAPI sectorMap) {
         try {
             return this.m_getMap.invoke(sectorMap);
         } catch (RuntimeException | Error ex) {
@@ -96,7 +97,7 @@ public class SectorMapAccess {
         }
     }
 
-    public void centerOn(Object sectorMap, Vector2f pos) {
+    public void centerOn(SectorMapAPI sectorMap, Vector2f pos) {
         try {
             this.m_centerOn.invoke(sectorMap, pos);
         } catch (RuntimeException | Error ex) {

@@ -1,5 +1,6 @@
 package net.andylizi.starsector.missionminimap.access;
 
+import com.fs.starfarer.api.ui.SectorMapAPI;
 import com.fs.starfarer.api.ui.UIPanelAPI;
 import net.andylizi.starsector.missionminimap.ReflectionUtil;
 
@@ -59,8 +60,8 @@ public class EventsPanelAccess {
     }
 
     @SuppressWarnings("unchecked")
-    public Class<? extends UIPanelAPI> sectorMapType() {
-        return (Class<? extends UIPanelAPI>) this.f_sectorMap_get.type().returnType();
+    public <T extends SectorMapAPI & UIPanelAPI> Class<? extends T> sectorMapType() {
+        return (Class<? extends T>) this.f_sectorMap_get.type().returnType();
     }
 
     public Object newInstance(Object intel) {
@@ -78,9 +79,10 @@ public class EventsPanelAccess {
         return newInstance(intel);
     }
 
-    public Object getSectorMap(Object eventsPanel) {
+    @SuppressWarnings("unchecked")
+    public <T extends SectorMapAPI & UIPanelAPI> T getSectorMap(Object eventsPanel) {
         try {
-            return this.f_sectorMap_get.invoke(eventsPanel);
+            return (T) this.f_sectorMap_get.invoke(eventsPanel);
         } catch (RuntimeException | Error ex) {
             throw ex;
         } catch (Throwable t) {

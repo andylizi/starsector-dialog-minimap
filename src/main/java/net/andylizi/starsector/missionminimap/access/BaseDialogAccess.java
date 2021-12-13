@@ -22,7 +22,7 @@ public class BaseDialogAccess {
     public Class<? extends UIPanelAPI> baseDialogType() {
         return baseDialogType;
     }
-    
+
     public UIPanelAPI getInterceptor(UIPanelAPI dialog) {
         try {
             return (UIPanelAPI) this.m_getInterceptor.invoke(dialog);

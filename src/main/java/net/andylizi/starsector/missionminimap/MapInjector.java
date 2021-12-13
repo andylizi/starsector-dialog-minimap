@@ -10,11 +10,16 @@ import java.util.List;
 import com.fs.graphics.util.Fader;
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.campaign.*;
+import com.fs.starfarer.api.campaign.comm.CommMessageAPI;
+import com.fs.starfarer.api.campaign.comm.IntelInfoPlugin;
+import com.fs.starfarer.api.campaign.comm.IntelManagerAPI;
 import com.fs.starfarer.api.campaign.rules.MemKeys;
 import com.fs.starfarer.api.campaign.rules.MemoryAPI;
 import com.fs.starfarer.api.combat.EngagementResultAPI;
 
+import com.fs.starfarer.api.impl.campaign.ids.Tags;
 import com.fs.starfarer.api.ui.LabelAPI;
+import com.fs.starfarer.api.ui.SectorMapAPI;
 import com.fs.starfarer.api.ui.UIComponentAPI;
 import com.fs.starfarer.api.ui.UIPanelAPI;
 import com.fs.starfarer.api.util.Misc;
@@ -39,6 +44,16 @@ public final class MapInjector {
         }
 
         if (m_optionSelected == null || acc_Option == null) {
+            /* We need to determine which method in the delegate interface is optionSelected()
+             * rather than `optionMousedOver()` or `optionConfirmed()`.
+             *
+             * Their names are obfuscated and their signatures are the same. They only way they differ
+             * is in their behaviour: `optionConfirmed()` will call the corresponding method
+             * in the dialog's `InteractionDialogPlugin`. So we temporarily replace it
+             * with a dummy one and trigger the candidates successively, checking which one of those
+             * invokes the method we want.
+             */
+
             class OptionDelegateProbe implements InteractionDialogPlugin {
                 boolean triggered = false;
 
@@ -72,17 +87,17 @@ public final class MapInjector {
             }
 
             OptionDelegateProbe probe = new OptionDelegateProbe();
-            Field dialogPluginField = ReflectionUtil.getFirstFieldByType(dialog.getClass(), InteractionDialogPlugin.class);
+            Field dialogPluginField = ReflectionUtil.getFirstFieldByType(
+                dialog.getClass(), InteractionDialogPlugin.class);
             dialogPluginField.setAccessible(true);
-            Object originalPlugin = dialogPluginField.get(dialog);
+            InteractionDialogPlugin originalPlugin = (InteractionDialogPlugin) dialogPluginField.get(dialog);
             try {
                 dialogPluginField.set(dialog, probe);
 
                 boolean isTheFirstOne = true;
                 for (Method m : acc_OptionPanel.delegateType().getMethods()) {
                     Class<?>[] paramTypes = m.getParameterTypes();
-                    if (paramTypes.length != 1)
-                        continue;
+                    if (paramTypes.length != 1) continue;
                     Class<?> paramType = paramTypes[0];
                     Object dummyArg = ReflectionUtil.instantiateDefault(paramType);
                     m.invoke(originalDelegate, dummyArg);
@@ -96,8 +111,9 @@ public final class MapInjector {
                     }
                 }
 
+                // We may have triggered showOptionConfirmDialog() while probing. Close that.
+                // No need to do this if we succeed at first try.
                 if (!isTheFirstOne) {
-                    // We may have triggered showOptionConfirmDialog() while probing. Close that.
                     try {
                         removeOptionConfirmDialog(dialog);
                     } catch (Throwable t) {
@@ -122,9 +138,11 @@ public final class MapInjector {
             public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
                 Object result = method.invoke(originalDelegate, args);
                 if (m_optionSelected.equals(method)) {
+                    // The player just selected an option, and the list have been updated.
                     removeSectorMapFromDialog(dialog);
                     for (Object option : panel.getSavedOptionList()) {
                         String text = access_Option.getText(option);
+                        // One of the options start with "Accept" — it's probably asking for a mission.
                         if ("Accept".startsWith(text)) {
                             searchMissionSystem(dialog);
                             break;
@@ -142,7 +160,7 @@ public final class MapInjector {
 
     private static TextPanelAccess acc_TextPanel;
 
-    public static void searchMissionSystem(InteractionDialogAPI dialog) throws Throwable {
+    public static void searchMissionSystem(InteractionDialogAPI dialog) throws ReflectiveOperationException {
         // From BaseHubMission.updateInteractionData()
         Map<String, MemoryAPI> memory = dialog.getPlugin().getMemoryMap();
         MemoryAPI interactionMemory = memory.get(MemKeys.LOCAL);
@@ -154,6 +172,8 @@ public final class MapInjector {
             }
         }
 
+        // Find all keys that look like $XX_systemName.
+        // The naming is just a convention, but I don't know of any exceptions.
         List<String> systemNames = new ArrayList<>(1);
         for (String key : interactionMemory.getKeys())
             if (key.endsWith("_systemName"))
@@ -199,8 +219,8 @@ public final class MapInjector {
             for (String name : systemNames) {
                 StarSystemAPI system = getStarSystem(name);
                 if (system == null) continue;
-                Set<String> seen = new HashSet<>();
 
+                Set<String> seen = new HashSet<>();
                 for (SectorEntityToken entity : system.getAllEntities()) {
                     String entityName = entity.getName();
 
@@ -269,8 +289,11 @@ public final class MapInjector {
         }
 
         float width = ((UIComponentAPI) dialog.getTextPanel()).getPosition().getWidth();
-        UIComponentAPI sectorMap = (UIComponentAPI) acc_SectorMap.newInstance(mapParams, width, 300f);
-        addSectorMapToDialog(dialog, sectorMap);
+        SectorMapAPI sectorMap = acc_SectorMap.newInstance(mapParams, width, 300f);
+        Object mapDisplay = acc_SectorMap.getMap(sectorMap);
+        addIntelToMap(sectorMap, mapDisplay, width * 0.6f);
+
+        addSectorMapToDialog(dialog, (UIComponentAPI) sectorMap);
         acc_SectorMap.centerOn(sectorMap, target.getLocationInHyperspace());
 
         try {
@@ -280,15 +303,41 @@ public final class MapInjector {
             Color color = star == null ? Misc.getDarkPlayerColor() : star.getSpec().getIconColor();
             color = new Color(color.getRed(), color.getGreen(), color.getBlue(), 110);
 
-            Object mapDisplay = acc_SectorMap.getMap(sectorMap);
-            if (acc_mapDisplay == null) {
-                @SuppressWarnings("unchecked")
-                Class<? extends UIPanelAPI> mapDisplayType = (Class<? extends UIPanelAPI>) mapDisplay.getClass();
-                acc_mapDisplay = new MapDisplayAccess(mapDisplayType);
-            }
+            if (acc_mapDisplay == null) acc_mapDisplay = new MapDisplayAccess(((UIPanelAPI) mapDisplay).getClass());
             acc_mapDisplay.addPing(mapDisplay, system.getHyperspaceAnchor(), color, 360f, 1);
         } catch (Throwable t) {
             logger.warn("Failed to ping the target on the map", t);
+        }
+    }
+
+    private static IntelDataAccess acc_IntelData;
+
+    private static void addIntelToMap(SectorMapAPI sectorMap, Object mapDisplay, float tooltipWidth)
+        throws ReflectiveOperationException {
+        if (acc_mapDisplay == null) acc_mapDisplay = new MapDisplayAccess(((UIPanelAPI) mapDisplay).getClass());
+        if (acc_IntelData == null) acc_IntelData = new IntelDataAccess(acc_mapDisplay.intelDataType());
+        acc_mapDisplay.getIntelData(mapDisplay).clear();
+
+        for (IntelInfoPlugin plugin : Global.getSector().getIntelManager().getIntel()) {
+            if (plugin.isHidden()) continue;
+
+            Set<String> tags = plugin.getIntelTags(sectorMap);
+            if (!tags.contains(Tags.INTEL_ACCEPTED)) continue;
+
+            SectorEntityToken entity = plugin.getMapLocation(sectorMap);
+            if (entity == null || (entity.getStarSystem() != null &&
+                                   entity.getStarSystem().getDoNotShowIntelFromThisLocationOnMap() != null &&
+                                   entity.getStarSystem().getDoNotShowIntelFromThisLocationOnMap())) continue;
+
+            CommMessageAPI commMessage = Global.getFactory().createMessage();
+            commMessage.setSmallIcon(plugin.getIcon());
+
+            Object intelData = acc_IntelData.newInstance();
+            acc_IntelData.setCommMessage(intelData, commMessage);
+            acc_IntelData.setIntelPlugin(intelData, plugin);
+            acc_IntelData.setEntity(intelData, entity);
+            acc_IntelData.setTooltipWidth(intelData, tooltipWidth);
+            acc_mapDisplay.addIntelData(mapDisplay, intelData);
         }
     }
 
@@ -317,6 +366,7 @@ public final class MapInjector {
 
     private static UIPanelAccess acc_UIPanel;
 
+    @SuppressWarnings({ "ObjectEquality", "EqualsBetweenInconvertibleTypes" })
     private static void removeSectorMapFromDialog(InteractionDialogAPI dialog) throws ReflectiveOperationException {
         UIPanelAPI dialogPanel = (UIPanelAPI) dialog;
         if (acc_UIPanel == null) acc_UIPanel = new UIPanelAccess(dialogPanel.getClass());
@@ -365,15 +415,21 @@ public final class MapInjector {
         }
     }
 
+    /* MapParams have a bunch of obfuscated boolean fields. Without other indicators, we
+     * can't tell what each one of them means programmatically. Luckily, however, the map
+     * configuration we want is the same as in the EventsPanel (the Intel screen in game).
+     *
+     * So, we construct one of those here, make it initialize the map panel,
+     * then extract the flags it set for our own use.
+     */
     private static Map<MethodHandle, Boolean> getIntelMapParams(
         EventsPanelAccess acc_EventsPanel,
         SectorMapAccess acc_SectorMap
     ) throws ReflectiveOperationException {
         Object eventsPanel = acc_EventsPanel.newInstanceDefault();
-        // initialize the map panel
-        acc_EventsPanel.sizeChanged(eventsPanel, 100f, 100f);
+        acc_EventsPanel.sizeChanged(eventsPanel, 100f, 100f); // initialize the map panel
 
-        Object sectorMap = acc_EventsPanel.getSectorMap(eventsPanel);
+        SectorMapAPI sectorMap = acc_EventsPanel.getSectorMap(eventsPanel);
         Object mapParams = acc_SectorMap.getParams(sectorMap);
 
         MethodHandles.Lookup lookup = MethodHandles.publicLookup();
