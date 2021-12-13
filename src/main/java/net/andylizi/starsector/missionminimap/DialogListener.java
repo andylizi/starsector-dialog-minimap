@@ -14,7 +14,7 @@ public class DialogListener extends BaseCampaignEventListener implements Seriali
     private static final MethodHandle injector;
 
     static {
-        MethodHandle tmp = null;
+        MethodHandle tmp;
         try {
             // Bypass reflection restriction
             ClassLoader cl = PluginMain.class.getClassLoader();

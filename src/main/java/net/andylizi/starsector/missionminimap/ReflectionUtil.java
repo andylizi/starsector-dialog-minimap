@@ -1,17 +1,51 @@
 package net.andylizi.starsector.missionminimap;
 
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
+import java.lang.reflect.*;
 import java.util.ArrayList;
 import java.util.List;
 
 public final class ReflectionUtil {
+    private static final MethodHandle TRY_SET_ACCESSIBLE;
+
+    static {
+        MethodHandle trySetAccessible = null;
+        try {
+            //noinspection JavaLangInvokeHandleSignature
+            trySetAccessible = MethodHandles.lookup()
+                .findVirtual(AccessibleObject.class, "trySetAccessible", MethodType.methodType(boolean.class));
+        } catch (NoSuchMethodException ignored) {
+            // Below Java 9
+        } catch (RuntimeException | Error ex) {
+            throw ex;
+        } catch (Throwable t) {
+            throw new ExceptionInInitializerError(t);
+        }
+        TRY_SET_ACCESSIBLE = trySetAccessible;
+    }
+
+    public static boolean trySetAccessible(AccessibleObject object) {
+        try {
+            if (TRY_SET_ACCESSIBLE != null) {
+                return (boolean) TRY_SET_ACCESSIBLE.invokeExact(object);
+            } else {
+                object.setAccessible(true);
+                return true;
+            }
+        } catch (SecurityException ex) {
+            return false;
+        } catch (RuntimeException | Error ex) {
+            throw ex;
+        } catch (Throwable t) {
+            throw new AssertionError(t);
+        }
+    }
+
     public static Method getFirstMethodByName(Class<?> owner, String name) throws NoSuchMethodException {
         for (Method m : owner.getDeclaredMethods()) {
             if (name.equals(m.getName())) {
-                m.setAccessible(true);
                 return m;
             }
         }
@@ -21,7 +55,6 @@ public final class ReflectionUtil {
     public static Field getFirstFieldByType(Class<?> owner, Class<?> type) throws NoSuchFieldException {
         for (Field f : owner.getDeclaredFields()) {
             if (type == f.getType()) {
-                f.setAccessible(true);
                 return f;
             }
         }
@@ -31,13 +64,12 @@ public final class ReflectionUtil {
     public static Field getFirstFieldBySupertype(Class<?> owner, Class<?> supertype) throws NoSuchFieldException {
         for (Field f : owner.getDeclaredFields()) {
             if (supertype.isAssignableFrom(f.getType())) {
-                f.setAccessible(true);
                 return f;
             }
         }
         throw new NoSuchFieldException("field with super" + supertype + " in " + owner);
     }
-    
+
     public static List<Field> getFieldsByType(Class<?> owner, Class<?> type) {
         List<Field> fields = new ArrayList<>();
         for (Field f : owner.getDeclaredFields()) {
@@ -45,9 +77,10 @@ public final class ReflectionUtil {
         }
         return fields;
     }
-    
+
     @SuppressWarnings("unchecked")
-    public static <T> Constructor<T> getFirstConstructorByParameterCount(Class<T> type, int count) throws NoSuchMethodException {
+    public static <T> Constructor<T> getFirstConstructorByParameterCount(Class<T> type, int count) throws
+        NoSuchMethodException {
         for (Constructor<?> ctor : type.getDeclaredConstructors()) {
             if (ctor.getParameterTypes().length == count)
                 return (Constructor<T>) ctor;
@@ -55,13 +88,14 @@ public final class ReflectionUtil {
         throw new NoSuchMethodException("constructor with " + count + " parameters in " + type);
     }
 
-    @SuppressWarnings({ "unchecked", "deprecation" })
+    @SuppressWarnings("UnnecessaryBoxing")
     public static <T> T instantiateDefault(Class<T> cls)
-            throws InstantiationException, IllegalAccessException, IllegalArgumentException, InvocationTargetException {
+        throws InstantiationException, IllegalAccessException, IllegalArgumentException, InvocationTargetException {
         Constructor<?>[] ctors = cls.getConstructors();
         if (ctors.length == 0)
             return cls.newInstance();
 
+        @SuppressWarnings("unchecked")
         Constructor<T> ctor = (Constructor<T>) ctors[0];
         Class<?>[] paramTypes = ctor.getParameterTypes();
         if (paramTypes.length == 0)

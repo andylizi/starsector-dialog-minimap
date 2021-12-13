@@ -3,8 +3,6 @@ package net.andylizi.starsector.missionminimap;
 import java.awt.*;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
-import java.lang.invoke.MethodHandles.Lookup;
-import java.lang.invoke.MethodType;
 import java.lang.reflect.*;
 import java.util.*;
 import java.util.List;
@@ -20,197 +18,132 @@ import com.fs.starfarer.api.ui.LabelAPI;
 import com.fs.starfarer.api.ui.UIComponentAPI;
 import com.fs.starfarer.api.ui.UIPanelAPI;
 import com.fs.starfarer.api.util.Misc;
+import net.andylizi.starsector.missionminimap.access.*;
 import org.apache.log4j.Logger;
-import org.lwjgl.util.vector.Vector2f;
 
-@SuppressWarnings("unused")
 public final class MapInjector {
     private static final Logger logger = Logger.getLogger(MapInjector.class);
 
-    private static Class<?> DIALOG_IMPL_TYPE;
-    private static Class<?> OPTION_PANEL_IMPL_TYPE;
-    private static MethodHandle OPTION_DELEGATE_GETTER;
-    private static MethodHandle OPTION_DELEGATE_SETTER;
-    private static Method OPTION_SELECTED_METHOD;
-    private static Class<?> OPTION_TYPE;
-    private static MethodHandle OPTION_TEXT_GETTER;
+    private static OptionPanelAccess acc_OptionPanel;
+    private static OptionAccess acc_Option;
+    private static Method m_optionSelected;
 
-    private static void clearCache() {
-        DIALOG_IMPL_TYPE = null;
-        OPTION_PANEL_IMPL_TYPE = null;
-        OPTION_DELEGATE_GETTER = null;
-        OPTION_DELEGATE_SETTER = null;
-        OPTION_SELECTED_METHOD = null;
-        OPTION_TYPE = null;
-    }
+    public static void injectDialog(final InteractionDialogAPI dialog) throws ReflectiveOperationException {
+        final OptionPanelAPI panel = dialog.getOptionPanel();
+        if (acc_OptionPanel == null) acc_OptionPanel = new OptionPanelAccess(panel.getClass());
 
-    public static void injectDialog(final InteractionDialogAPI dialog) {
-        try {
-            Class<?> dialogType = dialog.getClass();
-            final OptionPanelAPI panel = dialog.getOptionPanel();
-            Class<?> panelType = panel.getClass();
-
-            // There should only be one implementation, but just in case
-            if ((DIALOG_IMPL_TYPE != null && !DIALOG_IMPL_TYPE.equals(dialogType)) ||
-                (OPTION_PANEL_IMPL_TYPE != null && !OPTION_PANEL_IMPL_TYPE.equals(panelType))) {
-                clearCache();
-            }
-
-            DIALOG_IMPL_TYPE = dialogType;
-            OPTION_PANEL_IMPL_TYPE = panelType;
-
-            if (OPTION_DELEGATE_GETTER == null) {
-                Method getDelegate = ReflectionUtil.getFirstMethodByName(panelType, "getDelegate");
-                Class<?> delegateInterface = getDelegate.getReturnType();
-
-                if (!delegateInterface.isInterface()) {
-                    throw new RuntimeException(
-                        "OptionPanelAPI impl getDelegate() return type isn't a interface: "
-                        + delegateInterface);
-                }
-
-                Field delegateField = ReflectionUtil.getFirstFieldByType(panelType, delegateInterface);
-                delegateField.setAccessible(true);
-
-                Lookup lookup = MethodHandles.publicLookup();
-                OPTION_DELEGATE_GETTER = lookup.unreflectGetter(delegateField);
-                OPTION_DELEGATE_SETTER = lookup.unreflectSetter(delegateField);
-            }
-
-            Class<?> delegateInterface = OPTION_DELEGATE_GETTER.type().returnType();
-            final Object originalDelegate = OPTION_DELEGATE_GETTER.invoke(panel);
-            Class<?> originalDelegateImplType = originalDelegate.getClass();
-            if (Proxy.isProxyClass(originalDelegateImplType)) {
-                return; // already injected
-            }
-
-            if (OPTION_SELECTED_METHOD == null) {
-                class OptionDelegateProbe implements InteractionDialogPlugin {
-                    boolean triggered = false;
-
-                    @Override
-                    public void init(InteractionDialogAPI dialog) {
-                    }
-
-                    @Override
-                    public void optionSelected(String optionText, Object optionData) {
-                        triggered = true;
-                    }
-
-                    @Override
-                    public void optionMousedOver(String optionText, Object optionData) {
-                    }
-
-                    @Override
-                    public void advance(float amount) {
-                    }
-
-                    @Override
-                    public void backFromEngagement(EngagementResultAPI battleResult) {
-                    }
-
-                    @Override
-                    public Object getContext() {
-                        throw new UnsupportedOperationException("unimplemented");
-                    }
-
-                    @Override
-                    public Map<String, MemoryAPI> getMemoryMap() {
-                        throw new UnsupportedOperationException("unimplemented");
-                    }
-                }
-
-                OptionDelegateProbe probe = new OptionDelegateProbe();
-                Field dialogPluginField = ReflectionUtil.getFirstFieldByType(dialogType,
-                    InteractionDialogPlugin.class);
-                dialogPluginField.setAccessible(true);
-                Object originalPlugin = dialogPluginField.get(dialog);
-                try {
-                    dialogPluginField.set(dialog, probe);
-
-                    boolean isTheFirstOne = true;
-                    for (Method m : delegateInterface.getMethods()) {
-                        Class<?>[] paramTypes = m.getParameterTypes();
-                        if (paramTypes.length != 1)
-                            continue;
-                        Class<?> paramType = paramTypes[0];
-                        Object dummyArg = ReflectionUtil.instantiateDefault(paramType);
-                        m.invoke(originalDelegate, dummyArg);
-
-                        if (probe.triggered) {
-                            OPTION_SELECTED_METHOD = m;
-                            OPTION_TYPE = paramType;
-                            break;
-                        } else {
-                            isTheFirstOne = false;
-                        }
-                    }
-
-                    if (!isTheFirstOne) {
-                        // We may have triggered showOptionConfirmDialog() while probing. Close that.
-                        try {
-                            removeOptionConfirmDialog(dialog);
-                        } catch (Throwable t) {
-                            // It's annoying having to close it manually, but ultimately not critical. Log and continue
-                            logger.warn("Failed to close the confirm dialog", t);
-                        }
-                    }
-
-                    if (OPTION_SELECTED_METHOD == null) {
-                        throw new RuntimeException(
-                            "Unable to determine which method in " + delegateInterface + "is optionSelected()");
-                    }
-                } finally {
-                    dialogPluginField.set(dialog, originalPlugin);
-                }
-            }
-
-            if (OPTION_TEXT_GETTER == null) {
-                Field textField = null;
-                for (Field f : OPTION_TYPE.getFields()) {
-                    if (String.class == f.getType()) {
-                        textField = f;
-                        break;
-                    }
-                }
-
-                if (textField == null) {
-                    throw new RuntimeException(
-                        "'text' field not found in the supposedly Option class: " + OPTION_TYPE.getName());
-                }
-                textField.setAccessible(true); // is actually public, but whatever
-                OPTION_TEXT_GETTER = MethodHandles.publicLookup().unreflectGetter(textField);
-            }
-
-            final Method optionSelectedMethod = OPTION_SELECTED_METHOD;
-            final MethodHandle optionTextGetter = OPTION_TEXT_GETTER;
-            Object newDelegate = Proxy.newProxyInstance(originalDelegateImplType.getClassLoader(),
-                new Class<?>[] { delegateInterface }, new InvocationHandler() {
-                    @Override
-                    public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-                        Object result = method.invoke(originalDelegate, args);
-                        if (optionSelectedMethod.equals(method)) {
-                            removeMapPanelFromDialog(dialog);
-
-                            String chosenOption = (String) optionTextGetter.invoke(args[0]);
-                            for (Object option : panel.getSavedOptionList()) {
-                                String text = (String) optionTextGetter.invoke(option);
-                                if ("Accept".startsWith(text)) {
-                                    searchMissionSystem(dialog, chosenOption);
-                                    break;
-                                }
-                            }
-                        }
-                        return result;
-                    }
-                });
-            OPTION_DELEGATE_SETTER.invoke(panel, newDelegate);
-        } catch (Throwable t) {
-            t.printStackTrace();
+        final Object originalDelegate = acc_OptionPanel.getDelegate(panel);
+        Class<?> originalDelegateImplType = originalDelegate.getClass();
+        if (Proxy.isProxyClass(originalDelegateImplType)) {
+            return; // already injected
         }
+
+        if (m_optionSelected == null || acc_Option == null) {
+            class OptionDelegateProbe implements InteractionDialogPlugin {
+                boolean triggered = false;
+
+                @Override
+                public void init(InteractionDialogAPI dialog) {}
+
+                @Override
+                public void optionSelected(String optionText, Object optionData) {
+                    triggered = true;
+                }
+
+                @Override
+                public void optionMousedOver(String optionText, Object optionData) {}
+
+                @Override
+                public void advance(float amount) {
+                }
+
+                @Override
+                public void backFromEngagement(EngagementResultAPI battleResult) {}
+
+                @Override
+                public Object getContext() {
+                    throw new UnsupportedOperationException("unimplemented");
+                }
+
+                @Override
+                public Map<String, MemoryAPI> getMemoryMap() {
+                    throw new UnsupportedOperationException("unimplemented");
+                }
+            }
+
+            OptionDelegateProbe probe = new OptionDelegateProbe();
+            Field dialogPluginField = ReflectionUtil.getFirstFieldByType(dialog.getClass(), InteractionDialogPlugin.class);
+            dialogPluginField.setAccessible(true);
+            Object originalPlugin = dialogPluginField.get(dialog);
+            try {
+                dialogPluginField.set(dialog, probe);
+
+                boolean isTheFirstOne = true;
+                for (Method m : acc_OptionPanel.delegateType().getMethods()) {
+                    Class<?>[] paramTypes = m.getParameterTypes();
+                    if (paramTypes.length != 1)
+                        continue;
+                    Class<?> paramType = paramTypes[0];
+                    Object dummyArg = ReflectionUtil.instantiateDefault(paramType);
+                    m.invoke(originalDelegate, dummyArg);
+
+                    if (probe.triggered) {
+                        m_optionSelected = m;
+                        acc_Option = new OptionAccess(paramType);
+                        break;
+                    } else {
+                        isTheFirstOne = false;
+                    }
+                }
+
+                if (!isTheFirstOne) {
+                    // We may have triggered showOptionConfirmDialog() while probing. Close that.
+                    try {
+                        removeOptionConfirmDialog(dialog);
+                    } catch (Throwable t) {
+                        // It's annoying having to close it manually, but ultimately not critical. Log and continue
+                        logger.warn("Failed to close the confirm dialog", t);
+                    }
+                }
+
+                if (m_optionSelected == null) {
+                    throw new RuntimeException(
+                        "Unable to determine which method in " + acc_OptionPanel.delegateType() +
+                        "is optionSelected()");
+                }
+            } finally {
+                dialogPluginField.set(dialog, originalPlugin);
+            }
+        }
+
+        final OptionAccess access_Option = acc_Option;
+        class DelegateProxyHandler implements InvocationHandler {
+            @Override
+            public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+                Object result = method.invoke(originalDelegate, args);
+                if (m_optionSelected.equals(method)) {
+                    removeSectorMapFromDialog(dialog);
+                    for (Object option : panel.getSavedOptionList()) {
+                        String text = access_Option.getText(option);
+                        if ("Accept".startsWith(text)) {
+                            searchMissionSystem(dialog);
+                            break;
+                        }
+                    }
+                }
+                return result;
+            }
+        }
+
+        Object newDelegate = Proxy.newProxyInstance(originalDelegateImplType.getClassLoader(),
+            new Class<?>[] { acc_OptionPanel.delegateType() }, new DelegateProxyHandler());
+        acc_OptionPanel.setDelegate(panel, newDelegate);
     }
 
-    public static void searchMissionSystem(InteractionDialogAPI dialog, String selectedOption) throws Throwable {
+    private static TextPanelAccess acc_TextPanel;
+
+    public static void searchMissionSystem(InteractionDialogAPI dialog) throws Throwable {
+        // From BaseHubMission.updateInteractionData()
         Map<String, MemoryAPI> memory = dialog.getPlugin().getMemoryMap();
         MemoryAPI interactionMemory = memory.get(MemKeys.LOCAL);
         if (interactionMemory == null) {
@@ -230,6 +163,7 @@ public final class MapInjector {
             return;
         }
 
+        // Find the longest match
         Collections.sort(systemNames, new Comparator<String>() {
             @Override
             public int compare(String o1, String o2) {
@@ -237,12 +171,15 @@ public final class MapInjector {
             }
         });
 
-        List<LabelAPI> paragraphs = getParagraphs(dialog.getTextPanel());
+        TextPanelAPI textPanel = dialog.getTextPanel();
+        if (acc_TextPanel == null) acc_TextPanel = new TextPanelAccess(textPanel.getClass());
+        List<LabelAPI> paragraphs = acc_TextPanel.getParagraphs(textPanel);
+
         // Use last three paragraphs (explanation + selected option + explanation).
         // This is because some missions put the target name before a "Continue"
         ListIterator<LabelAPI> it = paragraphs.listIterator(paragraphs.size() - 3);
         StringBuilder description = new StringBuilder();
-        while (it.hasNext()) description.append(it.next().getText()).append('\n').append('\n');
+        while (it.hasNext()) description.append(it.next().getText());
 
         String systemName = null;
         int appearancePos = 0;
@@ -283,166 +220,88 @@ public final class MapInjector {
             if (target != null) {
                 logger.info("Mission target found: " + target.getName() + ", " +
                             target.getStarSystem().getNameWithLowercaseTypeShort());
-                tryShowMinimap(dialog, target);
+                showMinimap(dialog, target);
             }
         } else {
             StarSystemAPI system = getStarSystem(systemName);
             if (system != null) {
                 logger.info("Mission target found: " + system.getNameWithLowercaseTypeShort());
-                tryShowMinimap(dialog, system.getCenter());
+                showMinimap(dialog, system.getCenter());
             } else {
                 logger.warn("Unrecognized star system for the mission: " + systemName);
             }
         }
     }
 
-    private static Class<?> EVENTS_PANEL_TYPE;
-    private static MethodHandle EVENTS_MAP_PANEL_GETTER;
-    private static Class<?> MAP_PANEL_TYPE;
-    private static MethodHandle MAP_PANEL_CTOR;
-    private static MethodHandle MAP_PANEL_GET_MAP;
-    private static MethodHandle MAP_PANEL_CENTER_ON;
-    private static MethodHandle MAP_ADD_PING;
+    private static EventsPanelAccess acc_EventsPanel;
+    private static SectorMapAccess acc_SectorMap;
+    private static MapParamsAccess acc_MapParams;
+    private static MapFilterDataAccess acc_MapFilterData;
+    private static Map<MethodHandle, Boolean> mapParamsFlags;
+    private static MapDisplayAccess acc_mapDisplay;
 
-    private static Class<?> MAP_FILTER_TYPE;
-    private static Class<?> MAP_FILTER_DATA_TYPE;
-    private static MethodHandle MAP_FILTER_DATA_CTOR;
+    public static void showMinimap(InteractionDialogAPI dialog, SectorEntityToken target)
+        throws ReflectiveOperationException {
+        if (acc_EventsPanel == null) acc_EventsPanel = new EventsPanelAccess();
+        if (acc_SectorMap == null) acc_SectorMap = new SectorMapAccess(acc_EventsPanel.sectorMapType());
+        if (acc_MapParams == null)
+            acc_MapParams = new MapParamsAccess(acc_SectorMap.mapParamsType(), acc_SectorMap.mapFilterDataType());
+        if (acc_MapFilterData == null) acc_MapFilterData = new MapFilterDataAccess(acc_SectorMap.mapFilterDataType());
+        if (mapParamsFlags == null) mapParamsFlags = getIntelMapParams(acc_EventsPanel, acc_SectorMap);
 
-    private static Class<?> MAP_DATA_TYPE;
-    private static MethodHandle MAP_DATA_CTOR;
+        Object filterData = acc_MapFilterData.newInstance(true);
+        Object mapParams = acc_MapParams.newInstance();
+        acc_MapParams.setEntity(mapParams, target);
+        acc_MapParams.setFilterData(mapParams, filterData);
+        acc_MapParams.setLocation(mapParams, Global.getSector().getHyperspace());
+        acc_MapParams.trySetZoom(mapParams, 2.4f);
 
-    private static Field MAP_DATA_ENTITY;
-    private static Field MAP_DATA_FILTER_DATA;
-    private static Field MAP_DATA_TARGET_LOC;
-    private static Field MAP_DATA_ZOOM;
-    private static Map<Field, Boolean> MAP_DATA_FLAGS;
-
-    public static void tryShowMinimap(InteractionDialogAPI dialog, SectorEntityToken target) throws Throwable {
-        if (EVENTS_PANEL_TYPE == null) {
-            EVENTS_PANEL_TYPE = Class.forName("com.fs.starfarer.campaign.comms.v2.EventsPanel");
-        }
-
-        if (MAP_PANEL_TYPE == null) {
-            Lookup lookup = MethodHandles.publicLookup();
-            for (Field f : EVENTS_PANEL_TYPE.getDeclaredFields()) {
-                Class<?> type = f.getType();
-                if (!type.getName().startsWith("com.fs.starfarer.coreui.map")) continue;
-
-                boolean hasGetMap = false, hasGetFilter = false;
-                for (Method m : type.getDeclaredMethods()) {
-                    if ("getMap".equals(m.getName())) {
-                        hasGetMap = true;
-                        if (hasGetFilter) break;
-                    } else if ("getFilter".equals(m.getName())) {
-                        hasGetFilter = true;
-                        MAP_FILTER_TYPE = m.getReturnType();
-                        if (hasGetMap) break;
-                    }
-                }
-
-                if (hasGetMap && hasGetFilter) {
-                    MAP_PANEL_TYPE = type;
-                    f.setAccessible(true);
-                    EVENTS_MAP_PANEL_GETTER = lookup.unreflectGetter(f);
-                    break;
-                }
+        try {
+            for (Map.Entry<MethodHandle, Boolean> entry : mapParamsFlags.entrySet()) {
+                // MethodHandle.invoke() is @PolymorphicSignature, so it must be unboxed first
+                boolean flag = entry.getValue();
+                entry.getKey().invoke(mapParams, flag);
             }
-
-            if (MAP_PANEL_TYPE == null)
-                throw new ClassNotFoundException("Failed to find MapPanel from " + EVENTS_PANEL_TYPE);
-
-            MAP_PANEL_GET_MAP = lookup.unreflect(MAP_PANEL_TYPE.getMethod("getMap"));
-            MAP_PANEL_CENTER_ON = lookup
-                .unreflect(MAP_PANEL_TYPE.getMethod("centerOn", Vector2f.class));
-            MAP_ADD_PING = lookup.unreflect(MAP_PANEL_GET_MAP.type().returnType().getMethod("addPing",
-                SectorEntityToken.class, Color.class, float.class, int.class));
-        }
-
-        if (MAP_FILTER_DATA_TYPE == null) {
-            MAP_FILTER_DATA_TYPE = ReflectionUtil.getFirstMethodByName(MAP_FILTER_TYPE, "getData").getReturnType();
-            MAP_FILTER_DATA_CTOR = MethodHandles.publicLookup()
-                .findConstructor(MAP_FILTER_DATA_TYPE, MethodType.methodType(void.class, boolean.class));
-        }
-
-        if (MAP_DATA_TYPE == null) {
-            for (Constructor<?> ctor : MAP_PANEL_TYPE.getDeclaredConstructors()) {
-                Class<?>[] paramTypes = ctor.getParameterTypes();
-                // MapData data, float width, float height
-                if (paramTypes.length == 3 && paramTypes[1] == float.class && paramTypes[2] == float.class) {
-                    ctor.setAccessible(true); // TODO trySetAccessible
-                    MAP_DATA_TYPE = paramTypes[0];
-                    MAP_PANEL_CTOR = MethodHandles.publicLookup().unreflectConstructor(ctor);
-                }
-            }
-
-            if (MAP_DATA_TYPE == null)
-                throw new ClassNotFoundException("Failed to find MapPanel.Data in " + MAP_PANEL_TYPE);
-
-            MethodHandle MAP_DATA_GETTER = MethodHandles.publicLookup()
-                .unreflectGetter(ReflectionUtil.getFirstFieldByType(MAP_PANEL_TYPE, MAP_DATA_TYPE));
-            MAP_DATA_CTOR = MethodHandles.publicLookup()
-                .findConstructor(MAP_DATA_TYPE, MethodType.methodType(void.class));
-
-            MAP_DATA_ENTITY = ReflectionUtil.getFirstFieldByType(MAP_DATA_TYPE, SectorEntityToken.class);
-            MAP_DATA_FILTER_DATA = ReflectionUtil.getFirstFieldByType(MAP_DATA_TYPE, MAP_FILTER_DATA_TYPE);
-            MAP_DATA_TARGET_LOC = ReflectionUtil.getFirstFieldBySupertype(MAP_DATA_TYPE, LocationAPI.class);
-
-            // zoom is the only float defaulting to 0.0f
-            Object tmp = MAP_DATA_CTOR.invoke();
-            for (Field f : ReflectionUtil.getFieldsByType(MAP_DATA_TYPE, float.class)) {
-                f.setAccessible(true); // TODO trySetAccessible
-                if (f.getFloat(tmp) == 0.0f) {
-                    MAP_DATA_ZOOM = f;
-                    break;
-                }
-            }
-
-            MAP_DATA_FLAGS = getIntelMapSettings(EVENTS_PANEL_TYPE, EVENTS_MAP_PANEL_GETTER, MAP_DATA_GETTER);
-        }
-
-        Object filterData = MAP_FILTER_DATA_CTOR.invoke(false);
-        Object mapData = MAP_DATA_CTOR.invoke();
-
-        MAP_DATA_ENTITY.set(mapData, target);
-        MAP_DATA_FILTER_DATA.set(mapData, filterData);
-        MAP_DATA_TARGET_LOC.set(mapData, Global.getSector().getHyperspace());
-        if (MAP_DATA_ZOOM != null) MAP_DATA_ZOOM.setFloat(mapData, 2.4f);
-        for (Map.Entry<Field, Boolean> entry : MAP_DATA_FLAGS.entrySet()) {
-            entry.getKey().set(mapData, entry.getValue());
+        } catch (RuntimeException | Error ex) {
+            throw ex;
+        } catch (Throwable t) {
+            throw new AssertionError("unreachable", t);
         }
 
         float width = ((UIComponentAPI) dialog.getTextPanel()).getPosition().getWidth();
-        UIComponentAPI mapPanel = (UIComponentAPI) MAP_PANEL_CTOR.invoke(mapData, width, 300f);
-        addMapPanelToDialog(dialog, mapPanel);
-        MAP_PANEL_CENTER_ON.invoke(mapPanel, target.getLocationInHyperspace());
+        UIComponentAPI sectorMap = (UIComponentAPI) acc_SectorMap.newInstance(mapParams, width, 300f);
+        addSectorMapToDialog(dialog, sectorMap);
+        acc_SectorMap.centerOn(sectorMap, target.getLocationInHyperspace());
 
         try {
-            StarSystemAPI system = ((StarSystemAPI) target.getContainingLocation());
+            StarSystemAPI system = target.getStarSystem();
+            if (system == null) return;
             PlanetAPI star = system.getStar();
             Color color = star == null ? Misc.getDarkPlayerColor() : star.getSpec().getIconColor();
             color = new Color(color.getRed(), color.getGreen(), color.getBlue(), 110);
 
-            Object map = MAP_PANEL_GET_MAP.invoke(mapPanel);
-            MAP_ADD_PING.invoke(map, system.getHyperspaceAnchor(), color, /*size*/ 360f, /*count*/ 1);
+            Object mapDisplay = acc_SectorMap.getMap(sectorMap);
+            if (acc_mapDisplay == null) {
+                @SuppressWarnings("unchecked")
+                Class<? extends UIPanelAPI> mapDisplayType = (Class<? extends UIPanelAPI>) mapDisplay.getClass();
+                acc_mapDisplay = new MapDisplayAccess(mapDisplayType);
+            }
+            acc_mapDisplay.addPing(mapDisplay, system.getHyperspaceAnchor(), color, 360f, 1);
         } catch (Throwable t) {
             logger.warn("Failed to ping the target on the map", t);
         }
     }
 
-    private static MethodHandle GET_FADER;
+    private static UIComponentAccess acc_UIComponent;
 
-    private static Fader getFader(UIComponentAPI component) throws Throwable {
-        if (GET_FADER == null) {
-            Method m = component.getClass().getMethod("getFader");
-            m.setAccessible(true); // TODO trySetAccessible
-            GET_FADER = MethodHandles.publicLookup().unreflect(m);
-        }
-        return (Fader) GET_FADER.invoke(component);
+    private static Fader getFader(UIComponentAPI component) throws ReflectiveOperationException {
+        if (acc_UIComponent == null) acc_UIComponent = new UIComponentAccess(component.getClass());
+        return acc_UIComponent.getFader(component);
     }
 
-    private static void addMapPanelToDialog(InteractionDialogAPI dialog, UIComponentAPI mapPanel) {
+    private static void addSectorMapToDialog(InteractionDialogAPI dialog, UIComponentAPI mapPanel) {
         ((UIPanelAPI) dialog).addComponent(mapPanel)
-            .rightOfBottom((UIComponentAPI) dialog.getTextPanel(), 27.0f) // trying to align with the visual XD
+            .rightOfBottom((UIComponentAPI) dialog.getTextPanel(), 27.0f) // trying to align with the visual panel XD
             .setYAlignOffset(-150f);
 
         try {
@@ -452,137 +311,86 @@ public final class MapInjector {
             fader.fadeIn();
         } catch (Throwable t) {
             // It's fine
-            logger.warn("Failed to use Fader", t);
+            logger.warn("Failed to call Fader", t);
         }
     }
 
-    private static Class<?> UIPANEL_TYPE;
-    private static MethodHandle UIPANEL_GET_CHILDREN_NONCOPY;
-    private static MethodHandle UIPANEL_REMOVE;
+    private static UIPanelAccess acc_UIPanel;
 
-    private static void removeMapPanelFromDialog(InteractionDialogAPI dialog) throws Throwable {
-        if (UIPANEL_TYPE == null) {
-            UIPANEL_TYPE = BASE_DIALOG_TYPE.getSuperclass();
-            UIPANEL_GET_CHILDREN_NONCOPY = MethodHandles.publicLookup()
-                .unreflect(ReflectionUtil.getFirstMethodByName(UIPANEL_TYPE, "getChildrenNonCopy"));
-
-            for (Method m : UIPANEL_TYPE.getMethods()) {
-                Class<?>[] paramTypes;
-                if ("remove".equals(m.getName()) && !m.isVarArgs() &&
-                    (paramTypes = m.getParameterTypes()).length == 1 &&
-                    !paramTypes[0].isArray()) {
-                    m.setAccessible(true);  // TODO trySetAccessible
-                    UIPANEL_REMOVE = MethodHandles.publicLookup().unreflect(m);
-                }
-            }
+    private static void removeSectorMapFromDialog(InteractionDialogAPI dialog) throws ReflectiveOperationException {
+        UIPanelAPI dialogPanel = (UIPanelAPI) dialog;
+        if (acc_UIPanel == null) acc_UIPanel = new UIPanelAccess(dialogPanel.getClass());
+        if (acc_SectorMap == null) {
+            if (acc_EventsPanel == null) acc_EventsPanel = new EventsPanelAccess();
+            acc_SectorMap = new SectorMapAccess(acc_EventsPanel.sectorMapType());
         }
 
-        if (MAP_PANEL_TYPE == null) return;
-
-        @SuppressWarnings("unchecked")
-        List<UIComponentAPI> children = (List<UIComponentAPI>) UIPANEL_GET_CHILDREN_NONCOPY.invoke(dialog);
+        List<UIComponentAPI> children = acc_UIPanel.getChildrenNonCopy(dialogPanel);
         List<UIComponentAPI> removeList = null;
         for (UIComponentAPI child : children) {
-            if (child != null && child.getClass() == MAP_PANEL_TYPE) {
+            if (child != null && child.getClass() == acc_SectorMap.sectorMapType()) {
                 if (removeList == null) removeList = new ArrayList<>(1);
                 removeList.add(child);
             }
         }
 
         if (removeList != null)
-            for (UIComponentAPI toRemove : removeList) UIPANEL_REMOVE.invoke(dialog, toRemove);
+            for (UIComponentAPI toRemove : removeList)
+                acc_UIPanel.remove(dialogPanel, toRemove);
     }
 
-    private static Class<?> BASE_DIALOG_TYPE;
-    private static MethodHandle BASE_DIALOG_GET_INTERCEPTOR;
-    private static MethodHandle DIALOG_PICKERTYPE_SETTER;
+    private static BaseDialogAccess acc_BaseDialog;
+    private static InteractionDialogAccess acc_InteractionDialog;
 
     private static void removeOptionConfirmDialog(InteractionDialogAPI dialog) throws Throwable {
-        if (BASE_DIALOG_TYPE == null) {
-            Method m = dialog.getClass().getMethod("getInterceptor");
-            m.setAccessible(true); // TODO trySetAccessible
-            BASE_DIALOG_TYPE = m.getDeclaringClass();
-            BASE_DIALOG_GET_INTERCEPTOR = MethodHandles.publicLookup().unreflect(m);
-        }
+        UIPanelAPI dialogPanel = (UIPanelAPI) dialog;
+        if (acc_BaseDialog == null) acc_BaseDialog = new BaseDialogAccess(dialogPanel.getClass());
+        if (acc_UIPanel == null) acc_UIPanel = new UIPanelAccess(dialogPanel.getClass());
 
-        if (UIPANEL_GET_CHILDREN_NONCOPY == null) {
-            removeMapPanelFromDialog(dialog); // initialize. TODO find a better way to structure this
-        }
-
-        @SuppressWarnings("unchecked")
-        List<UIComponentAPI> children = (List<UIComponentAPI>) UIPANEL_GET_CHILDREN_NONCOPY.invoke(dialog);
-        List<UIComponentAPI> subdialogs = new ArrayList<>(1);
+        List<UIComponentAPI> children = acc_UIPanel.getChildrenNonCopy(dialogPanel);
+        List<UIComponentAPI> subDialogs = new ArrayList<>(1);
         for (UIComponentAPI child : children)
-            if (BASE_DIALOG_TYPE.isAssignableFrom(child.getClass())) subdialogs.add(child);
+            if (acc_BaseDialog.baseDialogType().isAssignableFrom(child.getClass())) subDialogs.add(child);
 
-        if (!subdialogs.isEmpty()) {
-            for (UIComponentAPI subdialog : subdialogs) {
-                UIComponentAPI interceptor = (UIComponentAPI) BASE_DIALOG_GET_INTERCEPTOR.invoke(subdialog);
-                UIPANEL_REMOVE.invoke(dialog, subdialog);
-                UIPANEL_REMOVE.invoke(dialog, interceptor);
+        if (!subDialogs.isEmpty()) {
+            for (UIComponentAPI subDialog : subDialogs) {
+                UIComponentAPI interceptor = acc_BaseDialog.getInterceptor((UIPanelAPI) subDialog);
+                acc_UIPanel.remove(dialogPanel, subDialog);
+                acc_UIPanel.remove(dialogPanel, interceptor);
             }
 
-            if (DIALOG_PICKERTYPE_SETTER == null) {
-                Class<?> dialogType = dialog.getClass();
-                for (Field f : dialogType.getDeclaredFields()) {
-                    Class<?> type = f.getType();
-                    if (type.isEnum() && type.getEnclosingClass() == dialogType) {
-                        f.setAccessible(true);
-                        DIALOG_PICKERTYPE_SETTER = MethodHandles.publicLookup().unreflectSetter(f);
-                        break;
-                    }
-                }
-
-                if (DIALOG_PICKERTYPE_SETTER == null)
-                    throw new NoSuchFieldException("field 'pickerType' in " + dialogType);
-            }
-
-            // reset it to null
-            DIALOG_PICKERTYPE_SETTER.invoke(dialog, null);
+            if (acc_InteractionDialog == null)
+                acc_InteractionDialog = new InteractionDialogAccess(dialog.getClass());
+            acc_InteractionDialog.setPickerType(dialog, null);
         }
     }
 
-    private static Map<Field, Boolean> getIntelMapSettings(Class<?> eventsPanelType,
-                                                           MethodHandle mapPanelGetter,
-                                                           MethodHandle mapDataGetter) throws Throwable {
-        Constructor<?> eventsPanelCtor = ReflectionUtil.getFirstConstructorByParameterCount(eventsPanelType, 1);
-        Class<?> intelPanelType = eventsPanelCtor.getParameterTypes()[0];
-        Object intelPanel = ReflectionUtil.instantiateDefault(intelPanelType);
-        Object eventsPanel = eventsPanelCtor.newInstance(intelPanel);
-
+    private static Map<MethodHandle, Boolean> getIntelMapParams(
+        EventsPanelAccess acc_EventsPanel,
+        SectorMapAccess acc_SectorMap
+    ) throws ReflectiveOperationException {
+        Object eventsPanel = acc_EventsPanel.newInstanceDefault();
         // initialize the map panel
-        Method sizeChanged = eventsPanelType.getMethod("sizeChanged", float.class, float.class);
-        sizeChanged.invoke(eventsPanel, 100f, 100f);
+        acc_EventsPanel.sizeChanged(eventsPanel, 100f, 100f);
 
-        Object mapPanel = mapPanelGetter.invoke(eventsPanel);
-        Object mapData = mapDataGetter.invoke(mapPanel);
+        Object sectorMap = acc_EventsPanel.getSectorMap(eventsPanel);
+        Object mapParams = acc_SectorMap.getParams(sectorMap);
 
-        Map<Field, Boolean> map = new LinkedHashMap<>();
-        for (Field f : ReflectionUtil.getFieldsByType(MAP_DATA_TYPE, boolean.class)) {
-            f.setAccessible(true);
-            boolean val = f.getBoolean(mapData);
-            map.put(f, val);
+        MethodHandles.Lookup lookup = MethodHandles.publicLookup();
+        Map<MethodHandle, Boolean> map = new LinkedHashMap<>();
+        for (Field f : ReflectionUtil.getFieldsByType(acc_SectorMap.mapParamsType(), boolean.class)) {
+            ReflectionUtil.trySetAccessible(f);
+            boolean val = f.getBoolean(mapParams);
+            map.put(lookup.unreflectSetter(f), val);
         }
         return Collections.unmodifiableMap(map);
     }
 
-    private static MethodHandle PARAGRAPHS_GETTER;
-
-    @SuppressWarnings("unchecked")
-    private static List<LabelAPI> getParagraphs(TextPanelAPI textPanel) throws Throwable {
-        if (PARAGRAPHS_GETTER == null) {
-            Field f = ReflectionUtil.getFirstFieldBySupertype(textPanel.getClass(), List.class);
-            PARAGRAPHS_GETTER = MethodHandles.publicLookup().unreflectGetter(f);
-        }
-
-        return (List<LabelAPI>) PARAGRAPHS_GETTER.invoke(textPanel);
-    }
-
     private static StarSystemAPI getStarSystem(String systemName) {
-        String lowercased = systemName.toLowerCase(Locale.ROOT);
-        if (lowercased.endsWith(" star system")) {
+        String lowercase = systemName.toLowerCase(Locale.ROOT);
+        if (lowercase.endsWith(" star system")) {
             systemName = systemName.substring(0, systemName.length() - " star system".length());
-        } else if (lowercased.endsWith(" system") || lowercased.endsWith(" nebula")) {
+        } else if (lowercase.endsWith(" system") || lowercase.endsWith(" nebula")) {
             // "system" and "nebula" happened to be the same length :D
             systemName = systemName.substring(0, systemName.length() - " system".length());
         }
