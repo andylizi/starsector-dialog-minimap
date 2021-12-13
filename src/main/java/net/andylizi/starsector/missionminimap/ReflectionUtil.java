@@ -67,7 +67,23 @@ public final class ReflectionUtil {
                 return f;
             }
         }
-        throw new NoSuchFieldException("field with super" + supertype + " in " + owner);
+        throw new NoSuchFieldException("field with a type that is assignable to " +
+                                       supertype.getName() + " in " + owner);
+    }
+
+    public static Field getFirstFieldByContainerType(Class<?> owner, Class<?> container, Class<?> element)
+        throws NoSuchFieldException {
+        for (Field f : owner.getDeclaredFields()) {
+            Type type = f.getGenericType();
+            if (type instanceof ParameterizedType) {
+                ParameterizedType p = (ParameterizedType) type;
+                if (p.getRawType() == container && p.getActualTypeArguments()[0] == element) {
+                    return f;
+                }
+            }
+        }
+        throw new NoSuchFieldException("field with type " + container.getName() +
+                                       "<" + element.getName() + "> in " + owner);
     }
 
     public static List<Field> getFieldsByType(Class<?> owner, Class<?> type) {

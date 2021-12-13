@@ -17,6 +17,7 @@ import com.fs.starfarer.api.campaign.rules.MemoryAPI;
 import com.fs.starfarer.api.combat.EngagementResultAPI;
 
 import com.fs.starfarer.api.impl.campaign.ids.Tags;
+import com.fs.starfarer.api.impl.campaign.procgen.Constellation;
 import com.fs.starfarer.api.ui.LabelAPI;
 import com.fs.starfarer.api.ui.SectorMapAPI;
 import com.fs.starfarer.api.ui.UIComponentAPI;
@@ -269,6 +270,8 @@ public final class MapInjector {
         if (mapParamsFlags == null) mapParamsFlags = getIntelMapParams(acc_EventsPanel, acc_SectorMap);
 
         Object filterData = acc_MapFilterData.newInstance(true);
+        acc_MapFilterData.setFactions(filterData, false); // Also show names for uninhabited stars
+
         Object mapParams = acc_MapParams.newInstance();
         acc_MapParams.setEntity(mapParams, target);
         acc_MapParams.setFilterData(mapParams, filterData);
@@ -291,13 +294,20 @@ public final class MapInjector {
         float width = ((UIComponentAPI) dialog.getTextPanel()).getPosition().getWidth();
         SectorMapAPI sectorMap = acc_SectorMap.newInstance(mapParams, width, 300f);
         Object mapDisplay = acc_SectorMap.getMap(sectorMap);
-        addIntelToMap(sectorMap, mapDisplay, width * 0.6f);
+        updateIntelToMap(sectorMap, mapDisplay, width * 0.6f);
+
+        // Show the name of the target star system.
+        StarSystemAPI system = target.getStarSystem();
+        if (system != null) {
+            Set<StarSystemAPI> starSystems = acc_MapParams.getStarSystems(mapParams);
+            if (starSystems == null) acc_MapParams.setStarSystems(mapParams, starSystems = new HashSet<>());
+            starSystems.add(system);
+        }
 
         addSectorMapToDialog(dialog, (UIComponentAPI) sectorMap);
         acc_SectorMap.centerOn(sectorMap, target.getLocationInHyperspace());
 
         try {
-            StarSystemAPI system = target.getStarSystem();
             if (system == null) return;
             PlanetAPI star = system.getStar();
             Color pingColor = star == null ? Misc.getDarkPlayerColor() : star.getSpec().getIconColor();
@@ -312,15 +322,26 @@ public final class MapInjector {
 
     private static IntelDataAccess acc_IntelData;
 
-    private static void addIntelToMap(SectorMapAPI sectorMap, Object mapDisplay, float tooltipWidth)
+    // This method clears the existing intel data and the systems/constellations filter
+    private static void updateIntelToMap(SectorMapAPI sectorMap, Object mapDisplay, float tooltipWidth)
         throws ReflectiveOperationException {
+        if (acc_SectorMap == null) acc_SectorMap = new SectorMapAccess(sectorMap.getClass());
+        if (acc_MapParams == null)
+            acc_MapParams = new MapParamsAccess(acc_SectorMap.mapParamsType(), acc_SectorMap.mapFilterDataType());
         if (acc_mapDisplay == null) acc_mapDisplay = new MapDisplayAccess(((UIPanelAPI) mapDisplay).getClass());
         if (acc_IntelData == null) acc_IntelData = new IntelDataAccess(acc_mapDisplay.intelDataType());
         acc_mapDisplay.getIntelData(mapDisplay).clear();
 
+        Object mapParams = acc_SectorMap.getParams(sectorMap);
+        Set<StarSystemAPI> starSystems = new HashSet<>();
+        Set<Constellation> constellations = new HashSet<>();
+        acc_MapParams.setStarSystems(mapParams, starSystems);
+        acc_MapParams.setConstellations(mapParams, constellations);
+
         for (IntelInfoPlugin plugin : Global.getSector().getIntelManager().getIntel()) {
             if (plugin.isHidden()) continue;
 
+            // Only accepted missions
             Set<String> tags = plugin.getIntelTags(sectorMap);
             if (!tags.contains(Tags.INTEL_ACCEPTED)) continue;
 
@@ -338,6 +359,18 @@ public final class MapInjector {
             acc_IntelData.setEntity(intelData, entity);
             acc_IntelData.setTooltipWidth(intelData, tooltipWidth);
             acc_mapDisplay.addIntelData(mapDisplay, intelData);
+
+            // Only show names for these stars
+            if (Misc.isHyperspaceAnchor(entity)) {
+                StarSystemAPI starSystem = Misc.getStarSystemForAnchor(entity);
+                starSystems.add(starSystem);
+            }
+            if (entity.getStarSystem() != null) {
+                starSystems.add(entity.getStarSystem());
+            } else {
+                Object constellation = entity.getCustomData().get("constellation");
+                if (constellation instanceof Constellation) constellations.add((Constellation) constellation);
+            }
         }
     }
 

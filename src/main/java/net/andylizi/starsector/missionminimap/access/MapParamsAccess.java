@@ -2,6 +2,8 @@ package net.andylizi.starsector.missionminimap.access;
 
 import com.fs.starfarer.api.campaign.LocationAPI;
 import com.fs.starfarer.api.campaign.SectorEntityToken;
+import com.fs.starfarer.api.campaign.StarSystemAPI;
+import com.fs.starfarer.api.impl.campaign.procgen.Constellation;
 import net.andylizi.starsector.missionminimap.ReflectionUtil;
 import org.jetbrains.annotations.Nullable;
 
@@ -10,6 +12,8 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.reflect.Field;
+import java.util.List;
+import java.util.Set;
 
 public class MapParamsAccess {
     private final Class<?> mapParamsType;
@@ -18,6 +22,10 @@ public class MapParamsAccess {
     private final MethodHandle f_filterData_set;
     private final MethodHandle f_borderColor_set;
     private final MethodHandle f_location_set;
+    private final MethodHandle f_starSystems_set;
+    private final MethodHandle f_starSystems_get;
+    private final MethodHandle f_constellations_set;
+    private final MethodHandle f_constellations_get;
 
     @Nullable
     private final MethodHandle f_zoom_set;
@@ -43,6 +51,16 @@ public class MapParamsAccess {
         field = ReflectionUtil.getFirstFieldBySupertype(mapParamsType, LocationAPI.class);
         ReflectionUtil.trySetAccessible(field);
         this.f_location_set = lookup.unreflectSetter(field);
+
+        field = ReflectionUtil.getFirstFieldByContainerType(mapParamsType, Set.class, StarSystemAPI.class);
+        ReflectionUtil.trySetAccessible(field);
+        this.f_starSystems_set = lookup.unreflectSetter(field);
+        this.f_starSystems_get = lookup.unreflectGetter(field);
+
+        field = ReflectionUtil.getFirstFieldByContainerType(mapParamsType, Set.class, Constellation.class);
+        ReflectionUtil.trySetAccessible(field);
+        this.f_constellations_set = lookup.unreflectSetter(field);
+        this.f_constellations_get = lookup.unreflectGetter(field);
 
         // zoom is the only float defaulting to 0.0f
         Object tmp = newInstance();
@@ -101,6 +119,18 @@ public class MapParamsAccess {
         }
     }
 
+    public boolean trySetZoom(Object mapParams, float zoom) {
+        if (this.f_zoom_set == null) return false;
+        try {
+            this.f_zoom_set.invoke(mapParams, zoom);
+            return true;
+        } catch (RuntimeException | Error ex) {
+            throw ex;
+        } catch (Throwable t) {
+            throw new AssertionError("unreachable", t);
+        }
+    }
+
     public void setLocation(Object mapParams, LocationAPI location) {
         try {
             this.f_location_set.invoke(mapParams, location);
@@ -111,11 +141,41 @@ public class MapParamsAccess {
         }
     }
 
-    public boolean trySetZoom(Object mapParams, float zoom) {
-        if (this.f_zoom_set == null) return false;
+    public void setStarSystems(Object mapParams, Set<StarSystemAPI> starSystems) {
         try {
-            this.f_zoom_set.invoke(mapParams, zoom);
-            return true;
+            this.f_starSystems_set.invoke(mapParams, starSystems);
+        } catch (RuntimeException | Error ex) {
+            throw ex;
+        } catch (Throwable t) {
+            throw new AssertionError("unreachable", t);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    public Set<StarSystemAPI> getStarSystems(Object mapParams) {
+        try {
+            return (Set<StarSystemAPI>) this.f_starSystems_get.invoke(mapParams);
+        } catch (RuntimeException | Error ex) {
+            throw ex;
+        } catch (Throwable t) {
+            throw new AssertionError("unreachable", t);
+        }
+    }
+
+    public void setConstellations(Object mapParams, Set<Constellation> constellations) {
+        try {
+            this.f_constellations_set.invoke(mapParams, constellations);
+        } catch (RuntimeException | Error ex) {
+            throw ex;
+        } catch (Throwable t) {
+            throw new AssertionError("unreachable", t);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    public Set<Constellation> getConstellations(Object mapParams) {
+        try {
+            return (Set<Constellation>) this.f_constellations_get.invoke(mapParams);
         } catch (RuntimeException | Error ex) {
             throw ex;
         } catch (Throwable t) {
