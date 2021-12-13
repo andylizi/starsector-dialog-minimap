@@ -5,6 +5,7 @@ import net.andylizi.starsector.dialogminimap.ReflectionUtil;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 
 public class OptionAccess {
     private final Class<?> optionType;
@@ -15,8 +16,12 @@ public class OptionAccess {
         Method method = null;
         for (Method m : optionType.getDeclaredMethods()) {
             if (m.getReturnType() == String.class) {
-                method = m;
-                break;
+                int mod = m.getModifiers();
+                // Exclude generated accessors: static synthetic
+                if (!Modifier.isStatic(mod) && (mod & 0x00001000) == 0) {
+                    method = m;
+                    break;
+                }
             }
         }
 
